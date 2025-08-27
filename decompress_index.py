@@ -4,9 +4,6 @@ import struct
 import zlib
 from typing import Dict, List, Any
 
-# ---------------------------
-# Utility Decoding Functions
-# ---------------------------
 def variable_byte_decode(data: bytes) -> List[int]:
     result = []
     i = 0
@@ -33,9 +30,7 @@ def delta_decode(deltas: List[int]) -> List[int]:
         result.append(result[-1] + deltas[i])
     return result
 
-# ---------------------------
-# Decompression
-# ---------------------------
+
 def decompress_index(compressed_index_dir: str, output_file: str) -> Dict[str, Any]:
     with open(os.path.join(compressed_index_dir, 'docid_mapping.json'), 'r', encoding='utf-8') as f:
         int_to_docid = {int(k): v for k, v in json.load(f).items()}
@@ -90,9 +85,7 @@ def decompress_index(compressed_index_dir: str, output_file: str) -> Dict[str, A
     print(f"Decompression complete. Index saved to {output_file}")
     return reconstructed_index
 
-# ---------------------------
-# Run from Command Line
-# ---------------------------
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 3:
