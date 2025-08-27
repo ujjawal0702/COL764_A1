@@ -7,19 +7,18 @@ import sys
 
 
 class BooleanQueryParser:
-    """Parser for Boolean queries with proper operator precedence and tree evaluation"""
+   
     
     def __init__(self):
-        # Operator precedence: () > NOT > AND > OR
+     
         self.precedence = {'OR': 1, 'AND': 2, 'NOT': 3}
         self.right_associative = {'NOT'}
         
     def tokenize_query(self, query: str) -> List[str]:
-        """Tokenize query while preserving Boolean operators and parentheses"""
-        # Replace parentheses with spaces around them for easier splitting
+       
         query = re.sub(r'([()])', r' \1 ', query)
         
-        # Split by whitespace and filter empty strings
+      
         tokens = [token.strip() for token in query.split() if token.strip()]
         
         processed_tokens = []
@@ -34,8 +33,7 @@ class BooleanQueryParser:
         return processed_tokens
     
     def preprocess_query(self, title: str, stopwords: Set[str]) -> List[str]:
-        """Apply same preprocessing as documents: lowercase, digit removal, stopword removal"""
-        # Tokenize while preserving operators
+      
         tokens = self.tokenize_query(title)
         
         processed = []
@@ -43,18 +41,18 @@ class BooleanQueryParser:
             if token in ['AND', 'OR', 'NOT', '(', ')']:
                 processed.append(token)
             else:
-                # Apply document preprocessing
+               
                 token = token.lower()
-                # Remove digits
+               
                 token = re.sub(r'\d+', '', token)
-                # Remove if it's a stopword or empty after processing
+              
                 if token and token not in stopwords:
                     processed.append(token)
         
         return processed
     
     def insert_implicit_ands(self, tokens: List[str]) -> List[str]:
-        """Insert implicit AND operators between adjacent terms"""
+      
         if not tokens:
             return tokens
             
@@ -64,24 +62,21 @@ class BooleanQueryParser:
         for i in range(len(tokens)):
             result.append(tokens[i])
             
-            # Don't add AND after the last token
+          
             if i == len(tokens) - 1:
                 break
                 
             current = tokens[i]
             next_token = tokens[i + 1]
-            
-            # Insert AND if:
-            # 1. Current is term or ')' AND next is term or '(' or 'NOT'
-            # 2. Current is term or ')' AND next is term or 'NOT'
+          
             should_insert_and = False
             
             if current not in operators and current != '(' and current != ')':
-                # Current is a term
+              
                 if (next_token not in operators and next_token != ')') or next_token == '(' or next_token == 'NOT':
                     should_insert_and = True
             elif current == ')':
-                # After closing parenthesis
+               
                 if (next_token not in operators and next_token != ')') or next_token == '(' or next_token == 'NOT':
                     should_insert_and = True
                     
@@ -91,17 +86,17 @@ class BooleanQueryParser:
         return result
     
     def infix_to_postfix(self, tokens: List[str]) -> List[str]:
-        """Convert infix Boolean expression to postfix using Shunting Yard algorithm"""
+       
         output = []
         operator_stack = []
         operators = {'AND', 'OR', 'NOT'}
         
         for token in tokens:
             if token not in operators and token not in ['(', ')']:
-                # It's a term
+              
                 output.append(token)
             elif token in operators:
-                # It's an operator
+                
                 while (operator_stack and 
                        operator_stack[-1] != '(' and
                        operator_stack[-1] in operators and
@@ -116,16 +111,16 @@ class BooleanQueryParser:
                 while operator_stack and operator_stack[-1] != '(':
                     output.append(operator_stack.pop())
                 if operator_stack and operator_stack[-1] == '(':
-                    operator_stack.pop()  # Remove the '('
+                    operator_stack.pop()  
                     
-        # Pop remaining operators
+   
         while operator_stack:
             output.append(operator_stack.pop())
             
         return output
     
     def evaluate_postfix(self, postfix: List[str], inverted_index: Dict) -> Set[str]:
-        """Evaluate postfix Boolean expression using inverted index"""
+       
         stack = []
         
         for token in postfix:
@@ -136,7 +131,7 @@ class BooleanQueryParser:
                     result = left.intersection(right)
                     stack.append(result)
                 else:
-                    # Handle case where we don't have enough operands
+                  
                     stack.append(set())
             elif token == 'OR':
                 if len(stack) >= 2:
@@ -145,54 +140,53 @@ class BooleanQueryParser:
                     result = left.union(right)
                     stack.append(result)
                 else:
-                    # Handle case where we don't have enough operands
+                   
                     stack.append(set())
             elif token == 'NOT':
                 if len(stack) >= 1:
                     operand = stack.pop()
-                    # For NOT, we need all documents except those in operand
+                   
                     all_docs = set()
                     for term_postings in inverted_index.values():
                         all_docs.update(term_postings.keys())
                     result = all_docs - operand
                     stack.append(result)
                 else:
-                    # Handle case where we don't have operand for NOT
+                   
                     stack.append(set())
             else:
-                # It's a term
+               
                 if token in inverted_index:
-                    # Get document IDs for this term
+                    
                     doc_ids = set(inverted_index[token].keys())
                     stack.append(doc_ids)
                 else:
-                    # Term not in index
+                   
                     stack.append(set())
         
         return stack[0] if stack else set()
     
     def parse_and_evaluate(self, query: str, inverted_index: Dict, stopwords: Set[str]) -> Set[str]:
-        """Complete pipeline: preprocess -> add implicit ANDs -> convert to postfix -> evaluate"""
-        # Step 1: Preprocess query
+       
         tokens = self.preprocess_query(query, stopwords)
         
         if not tokens:
             return set()
         
-        # Step 2: Insert implicit ANDs
+      
         tokens_with_ands = self.insert_implicit_ands(tokens)
         
-        # Step 3: Convert to postfix
+       
         postfix = self.infix_to_postfix(tokens_with_ands)
         
-        # Step 4: Evaluate
+      
         result = self.evaluate_postfix(postfix, inverted_index)
         
         return result
 
 
 def load_inverted_index(index_path: str) -> Dict:
-    """Load the inverted index from JSON file"""
+  
     try:
         with open(index_path, 'r', encoding='utf-8') as f:
             content = f.read().strip()
@@ -212,14 +206,14 @@ def load_inverted_index(index_path: str) -> Dict:
 
 
 def load_stopwords(stopwords_path: str) -> Set[str]:
-    """Load stopwords from file"""
+  
     stopwords = set()
     try:
         with open(stopwords_path, 'r') as f:
             for line in f:
                 stopwords.add(line.strip().lower())
     except FileNotFoundError:
-        # Default English stopwords if file not found
+      
         stopwords = {
             'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'by', 'for', 
             'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 
@@ -236,10 +230,10 @@ def load_stopwords(stopwords_path: str) -> Set[str]:
 
 
 def load_queries(path_to_query_file: str):
-    """Load queries from file, supporting multiple formats and encodings"""
+   
     queries = []
     
-    # Try different encodings
+  
     encodings = ['utf-8', 'utf-16', 'utf-8-sig', 'latin-1', 'cp1252']
     
     for encoding in encodings:
@@ -249,15 +243,15 @@ def load_queries(path_to_query_file: str):
                 if not content:
                     continue
                 
-                # Try JSON array format first
+               
                 try:
                     queries = json.loads(content)
                     if isinstance(queries, list):
-                        # Validate structure
+                       
                         valid_queries = []
                         for i, query in enumerate(queries):
                             if isinstance(query, dict):
-                                # Handle different field names
+                               
                                 qid = query.get('qid') or query.get('query_id') or query.get('id') or str(i+1)
                                 title = query.get('title') or query.get('query') or ""
                                 if title:
@@ -270,7 +264,7 @@ def load_queries(path_to_query_file: str):
                 except json.JSONDecodeError:
                     pass
                 
-                # Try JSONL format (one JSON object per line)
+               
                 try:
                     queries = []
                     lines = content.split('\n')
@@ -282,7 +276,7 @@ def load_queries(path_to_query_file: str):
                         try:
                             query_obj = json.loads(line)
                             if isinstance(query_obj, dict):
-                                # Handle different field names
+                               
                                 qid = query_obj.get('qid') or query_obj.get('query_id') or query_obj.get('id') or str(line_num)
                                 title = query_obj.get('title') or query_obj.get('query') or ""
                                 if title:
@@ -297,7 +291,7 @@ def load_queries(path_to_query_file: str):
                 except Exception:
                     pass
                 
-                # Try tab-separated text format
+                
                 try:
                     queries = []
                     lines = content.split('\n')
@@ -312,7 +306,7 @@ def load_queries(path_to_query_file: str):
                                 qid, title = parts[0], parts[1]
                                 queries.append({'qid': qid.strip(), 'title': title.strip()})
                         else:
-                            # Single line = title, auto-generate ID
+                           
                             queries.append({'qid': str(line_num), 'title': line})
                     
                     if queries:
@@ -325,23 +319,13 @@ def load_queries(path_to_query_file: str):
         except Exception as e:
             continue
     
-    # If all attempts fail
+   
     raise ValueError(f"Could not parse query file {path_to_query_file}. Tried encodings: {encodings}. Supported formats: JSON array, JSONL, tab-separated text")
 
 
 def boolean_retrieval(inverted_index_path: str, path_to_query_file: str, output_dir: str, 
                      stopwords_path: str = None) -> None:
-    """
-    Main function for Boolean retrieval
-    
-    Args:
-        inverted_index_path: Path to the inverted index JSON file
-        path_to_query_file: Path to query file (JSON, XML, or text format)
-        output_dir: Directory to save output file
-        stopwords_path: Path to stopwords file (optional)
-    """
-    
-    # Load inverted index
+   
     print("Loading inverted index...")
     try:
         inverted_index = load_inverted_index(inverted_index_path)
@@ -350,10 +334,10 @@ def boolean_retrieval(inverted_index_path: str, path_to_query_file: str, output_
         print(f"Error loading inverted index: {e}")
         return
     
-    # Load stopwords
+   
     stopwords = load_stopwords(stopwords_path) if stopwords_path else set()
     
-    # Load queries
+   
     print("Loading queries...")
     try:
         queries = load_queries(path_to_query_file)
@@ -361,13 +345,12 @@ def boolean_retrieval(inverted_index_path: str, path_to_query_file: str, output_
         print(f"Error loading queries: {e}")
         return
     
-    # Initialize parser
+    
     parser = BooleanQueryParser()
     
-    # Ensure output directory exists
+   
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Process queries and write results
+   
     output_file = os.path.join(output_dir, 'docids.txt')
     
     print(f"Processing {len(queries)} queries...")
@@ -378,15 +361,13 @@ def boolean_retrieval(inverted_index_path: str, path_to_query_file: str, output_
             
             print(f"Processing query {qid}: {title}")
             
-            # Parse and evaluate query
+           
             matching_docs = parser.parse_and_evaluate(title, inverted_index, stopwords)
-            
-            # Sort documents lexicographically for consistent ranking
+           
             sorted_docs = sorted(list(matching_docs))
-            
-            # Write results in TREC format
+           
             for rank, doc_id in enumerate(sorted_docs, 1):
-                # Format: qid docid rank score
+               
                 f.write(f"{qid} {doc_id} {rank} 1\n")
     
     print(f"Results written to {output_file}")
@@ -405,11 +386,11 @@ if __name__ == "__main__":
     query_file_path = sys.argv[2]
     output_directory = sys.argv[3]
 
-    # Optional: stopwords file
-    stopwords_file = "stopwords.txt"  # Change if you want dynamic path
+   
+    stopwords_file = "stopwords.txt" 
     stopwords_file_path = stopwords_file if os.path.exists(stopwords_file) else None
 
-    # Check if files exist
+ 
     if not os.path.exists(inverted_index_path):
         print(f"Error: Inverted index file not found: {inverted_index_path}")
         exit(1)
@@ -417,7 +398,7 @@ if __name__ == "__main__":
         print(f"Error: Query file not found: {query_file_path}")
         exit(1)
 
-    # Run Boolean retrieval
+   
     try:
         boolean_retrieval(
             inverted_index_path=inverted_index_path,
