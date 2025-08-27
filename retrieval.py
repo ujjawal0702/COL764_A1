@@ -1,352 +1,870 @@
-import json
-import os
-import re
-from typing import Dict, List, Set, Any, Union
-from query_parser import BooleanQueryParser, ASTNode
+# import json
+# import re
+# import os
+# from typing import List, Dict, Set, Union, Optional
+# from collections import defaultdict
 
-def load_stopwords(stopwords_file: str) -> Set[str]:
-    """Load stopwords from file with encoding detection."""
-    stopwords = set()
+# class BooleanQueryParser:
+#     """Parser for Boolean queries with proper operator precedence and tree evaluation"""
     
-    encodings = ['utf-8', 'utf-8-sig', 'utf-16', 'latin-1', 'cp1252']
+#     def __init__(self):
+#         # Operator precedence: () > NOT > AND > OR
+#         self.precedence = {'OR': 1, 'AND': 2, 'NOT': 3}
+#         self.right_associative = {'NOT'}
+        
+#     def tokenize_query(self, query: str) -> List[str]:
+#         """Tokenize query while preserving Boolean operators and parentheses"""
+#         # Replace parentheses with spaces around them for easier splitting
+#         query = re.sub(r'([()])', r' \1 ', query)
+        
+#         # Split by whitespace and filter empty strings
+#         tokens = [token.strip() for token in query.split() if token.strip()]
+        
+#         processed_tokens = []
+#         for token in tokens:
+#             if token.upper() in ['AND', 'OR', 'NOT']:
+#                 processed_tokens.append(token.upper())
+#             elif token in ['(', ')']:
+#                 processed_tokens.append(token)
+#             else:
+#                 processed_tokens.append(token.lower())
+                
+#         return processed_tokens
+    
+#     def preprocess_query(self, title: str, stopwords: Set[str]) -> List[str]:
+#         """Apply same preprocessing as documents: lowercase, digit removal, stopword removal"""
+#         # Tokenize while preserving operators
+#         tokens = self.tokenize_query(title)
+        
+#         processed = []
+#         for token in tokens:
+#             if token in ['AND', 'OR', 'NOT', '(', ')']:
+#                 processed.append(token)
+#             else:
+#                 # Apply document preprocessing
+#                 token = token.lower()
+#                 # Remove digits
+#                 token = re.sub(r'\d+', '', token)
+#                 # Remove if it's a stopword or empty after processing
+#                 if token and token not in stopwords:
+#                     processed.append(token)
+        
+#         return processed
+    
+#     def insert_implicit_ands(self, tokens: List[str]) -> List[str]:
+#         """Insert implicit AND operators between adjacent terms"""
+#         if not tokens:
+#             return tokens
+            
+#         result = []
+#         operators = {'AND', 'OR', 'NOT'}
+        
+#         for i in range(len(tokens)):
+#             result.append(tokens[i])
+            
+#             # Don't add AND after the last token
+#             if i == len(tokens) - 1:
+#                 break
+                
+#             current = tokens[i]
+#             next_token = tokens[i + 1]
+            
+#             # Insert AND if:
+#             # 1. Current is term or ')' AND next is term or '(' or 'NOT'
+#             # 2. Current is term or ')' AND next is term or 'NOT'
+#             should_insert_and = False
+            
+#             if current not in operators and current != '(' and current != ')':
+#                 # Current is a term
+#                 if (next_token not in operators and next_token != ')') or next_token == '(' or next_token == 'NOT':
+#                     should_insert_and = True
+#             elif current == ')':
+#                 # After closing parenthesis
+#                 if (next_token not in operators and next_token != ')') or next_token == '(' or next_token == 'NOT':
+#                     should_insert_and = True
+                    
+#             if should_insert_and:
+#                 result.append('AND')
+                
+#         return result
+    
+#     def infix_to_postfix(self, tokens: List[str]) -> List[str]:
+#         """Convert infix Boolean expression to postfix using Shunting Yard algorithm"""
+#         output = []
+#         operator_stack = []
+#         operators = {'AND', 'OR', 'NOT'}
+        
+#         for token in tokens:
+#             if token not in operators and token not in ['(', ')']:
+#                 # It's a term
+#                 output.append(token)
+#             elif token in operators:
+#                 # It's an operator
+#                 while (operator_stack and 
+#                        operator_stack[-1] != '(' and
+#                        operator_stack[-1] in operators and
+#                        (self.precedence[operator_stack[-1]] > self.precedence[token] or
+#                         (self.precedence[operator_stack[-1]] == self.precedence[token] and 
+#                          token not in self.right_associative))):
+#                     output.append(operator_stack.pop())
+#                 operator_stack.append(token)
+#             elif token == '(':
+#                 operator_stack.append(token)
+#             elif token == ')':
+#                 while operator_stack and operator_stack[-1] != '(':
+#                     output.append(operator_stack.pop())
+#                 if operator_stack and operator_stack[-1] == '(':
+#                     operator_stack.pop()  # Remove the '('
+                    
+#         # Pop remaining operators
+#         while operator_stack:
+#             output.append(operator_stack.pop())
+            
+#         return output
+    
+#     def evaluate_postfix(self, postfix: List[str], inverted_index: Dict) -> Set[str]:
+#         """Evaluate postfix Boolean expression using inverted index"""
+#         stack = []
+        
+#         for token in postfix:
+#             if token == 'AND':
+#                 if len(stack) >= 2:
+#                     right = stack.pop()
+#                     left = stack.pop()
+#                     result = left.intersection(right)
+#                     stack.append(result)
+#                 else:
+#                     # Handle case where we don't have enough operands
+#                     stack.append(set())
+#             elif token == 'OR':
+#                 if len(stack) >= 2:
+#                     right = stack.pop()
+#                     left = stack.pop()
+#                     result = left.union(right)
+#                     stack.append(result)
+#                 else:
+#                     # Handle case where we don't have enough operands
+#                     stack.append(set())
+#             elif token == 'NOT':
+#                 if len(stack) >= 1:
+#                     operand = stack.pop()
+#                     # For NOT, we need all documents except those in operand
+#                     all_docs = set()
+#                     for term_postings in inverted_index.values():
+#                         all_docs.update(term_postings.keys())
+#                     result = all_docs - operand
+#                     stack.append(result)
+#                 else:
+#                     # Handle case where we don't have operand for NOT
+#                     stack.append(set())
+#             else:
+#                 # It's a term
+#                 if token in inverted_index:
+#                     # Get document IDs for this term
+#                     doc_ids = set(inverted_index[token].keys())
+#                     stack.append(doc_ids)
+#                 else:
+#                     # Term not in index
+#                     stack.append(set())
+        
+#         return stack[0] if stack else set()
+    
+#     def parse_and_evaluate(self, query: str, inverted_index: Dict, stopwords: Set[str]) -> Set[str]:
+#         """Complete pipeline: preprocess -> add implicit ANDs -> convert to postfix -> evaluate"""
+#         # Step 1: Preprocess query
+#         tokens = self.preprocess_query(query, stopwords)
+        
+#         if not tokens:
+#             return set()
+        
+#         # Step 2: Insert implicit ANDs
+#         tokens_with_ands = self.insert_implicit_ands(tokens)
+        
+#         # Step 3: Convert to postfix
+#         postfix = self.infix_to_postfix(tokens_with_ands)
+        
+#         # Step 4: Evaluate
+#         result = self.evaluate_postfix(postfix, inverted_index)
+        
+#         return result
+
+
+# def load_inverted_index(index_path: str) -> Dict:
+#     """Load the inverted index from JSON file"""
+#     try:
+#         with open(index_path, 'r', encoding='utf-8') as f:
+#             content = f.read().strip()
+#             if not content:
+#                 raise ValueError("Inverted index file is empty")
+#             return json.loads(content)
+#     except json.JSONDecodeError as e:
+#         print(f"Error parsing inverted index JSON: {e}")
+#         print("Make sure your inverted index file is in valid JSON format")
+#         raise
+#     except FileNotFoundError:
+#         print(f"Inverted index file not found: {index_path}")
+#         raise
+#     except Exception as e:
+#         print(f"Unexpected error loading inverted index: {e}")
+#         raise
+
+
+# def load_stopwords(stopwords_path: str) -> Set[str]:
+#     """Load stopwords from file"""
+#     stopwords = set()
+#     try:
+#         with open(stopwords_path, 'r') as f:
+#             for line in f:
+#                 stopwords.add(line.strip().lower())
+#     except FileNotFoundError:
+#         # Default English stopwords if file not found
+#         stopwords = {
+#             'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'by', 'for', 
+#             'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 
+#             'the', 'to', 'was', 'will', 'with', 'the', 'this', 'but', 'they', 
+#             'have', 'had', 'what', 'said', 'each', 'which', 'she', 'do', 
+#             'how', 'their', 'if', 'up', 'out', 'many', 'then', 'them', 'these', 
+#             'so', 'some', 'her', 'would', 'make', 'like', 'into', 'him', 'time', 
+#             'two', 'more', 'very', 'when', 'come', 'may', 'its', 'only', 'think', 
+#             'now', 'work', 'life', 'only', 'can', 'still', 'should', 'after', 
+#             'being', 'just', 'where', 'much', 'go', 'well', 'were', 'been', 
+#             'through', 'when', 'there', 'could', 'people'
+#         }
+#     return stopwords
+
+
+# def load_queries(path_to_query_file: str):
+#     """Load queries from file, supporting multiple formats and encodings"""
+#     queries = []
+    
+#     # Try different encodings
+#     encodings = ['utf-8', 'utf-16', 'utf-8-sig', 'latin-1', 'cp1252']
+    
+#     for encoding in encodings:
+#         try:
+#             with open(path_to_query_file, 'r', encoding=encoding) as f:
+#                 content = f.read().strip()
+#                 if not content:
+#                     continue
+                
+#                 # Try JSON array format first
+#                 try:
+#                     queries = json.loads(content)
+#                     if isinstance(queries, list):
+#                         # Validate structure
+#                         valid_queries = []
+#                         for i, query in enumerate(queries):
+#                             if isinstance(query, dict):
+#                                 # Handle different field names
+#                                 qid = query.get('qid') or query.get('query_id') or query.get('id') or str(i+1)
+#                                 title = query.get('title') or query.get('query') or ""
+#                                 if title:
+#                                     valid_queries.append({'qid': str(qid), 'title': str(title)})
+                        
+#                         if valid_queries:
+#                             print(f"Loaded {len(valid_queries)} queries from JSON array format (encoding: {encoding})")
+#                             return valid_queries
+                
+#                 except json.JSONDecodeError:
+#                     pass
+                
+#                 # Try JSONL format (one JSON object per line)
+#                 try:
+#                     queries = []
+#                     lines = content.split('\n')
+#                     for line_num, line in enumerate(lines, 1):
+#                         line = line.strip()
+#                         if not line or line.startswith('#'):
+#                             continue
+                        
+#                         try:
+#                             query_obj = json.loads(line)
+#                             if isinstance(query_obj, dict):
+#                                 # Handle different field names
+#                                 qid = query_obj.get('qid') or query_obj.get('query_id') or query_obj.get('id') or str(line_num)
+#                                 title = query_obj.get('title') or query_obj.get('query') or ""
+#                                 if title:
+#                                     queries.append({'qid': str(qid), 'title': str(title)})
+#                         except json.JSONDecodeError:
+#                             continue
+                    
+#                     if queries:
+#                         print(f"Loaded {len(queries)} queries from JSONL format (encoding: {encoding})")
+#                         return queries
+                
+#                 except Exception:
+#                     pass
+                
+#                 # Try tab-separated text format
+#                 try:
+#                     queries = []
+#                     lines = content.split('\n')
+#                     for line_num, line in enumerate(lines, 1):
+#                         line = line.strip()
+#                         if not line or line.startswith('#'):
+#                             continue
+                        
+#                         if '\t' in line:
+#                             parts = line.split('\t', 1)
+#                             if len(parts) >= 2:
+#                                 qid, title = parts[0], parts[1]
+#                                 queries.append({'qid': qid.strip(), 'title': title.strip()})
+#                         else:
+#                             # Single line = title, auto-generate ID
+#                             queries.append({'qid': str(line_num), 'title': line})
+                    
+#                     if queries:
+#                         print(f"Loaded {len(queries)} queries from text format (encoding: {encoding})")
+#                         return queries
+                
+#                 except Exception:
+#                     pass
+                    
+#         except Exception as e:
+#             continue
+    
+#     # If all attempts fail
+#     raise ValueError(f"Could not parse query file {path_to_query_file}. Tried encodings: {encodings}. Supported formats: JSON array, JSONL, tab-separated text")
+
+
+# def boolean_retrieval(inverted_index_path: str, path_to_query_file: str, output_dir: str, 
+#                      stopwords_path: str = None) -> None:
+#     """
+#     Main function for Boolean retrieval
+    
+#     Args:
+#         inverted_index_path: Path to the inverted index JSON file
+#         path_to_query_file: Path to query file (JSON, XML, or text format)
+#         output_dir: Directory to save output file
+#         stopwords_path: Path to stopwords file (optional)
+#     """
+    
+#     # Load inverted index
+#     print("Loading inverted index...")
+#     try:
+#         inverted_index = load_inverted_index(inverted_index_path)
+#         print(f"Loaded inverted index with {len(inverted_index)} terms")
+#     except Exception as e:
+#         print(f"Error loading inverted index: {e}")
+#         return
+    
+#     # Load stopwords
+#     stopwords = load_stopwords(stopwords_path) if stopwords_path else set()
+    
+#     # Load queries
+#     print("Loading queries...")
+#     try:
+#         queries = load_queries(path_to_query_file)
+#     except Exception as e:
+#         print(f"Error loading queries: {e}")
+#         return
+    
+#     # Initialize parser
+#     parser = BooleanQueryParser()
+    
+#     # Ensure output directory exists
+#     os.makedirs(output_dir, exist_ok=True)
+    
+#     # Process queries and write results
+#     output_file = os.path.join(output_dir, 'docids.txt')
+    
+#     print(f"Processing {len(queries)} queries...")
+#     with open(output_file, 'w') as f:
+#         for query in queries:
+#             qid = query['qid']
+#             title = query['title']
+            
+#             print(f"Processing query {qid}: {title}")
+            
+#             # Parse and evaluate query
+#             matching_docs = parser.parse_and_evaluate(title, inverted_index, stopwords)
+            
+#             # Sort documents lexicographically for consistent ranking
+#             sorted_docs = sorted(list(matching_docs))
+            
+#             # Write results in TREC format
+#             for rank, doc_id in enumerate(sorted_docs, 1):
+#                 # Format: qid docid rank score
+#                 f.write(f"{qid} {doc_id} {rank} 1\n")
+    
+#     print(f"Results written to {output_file}")
+
+
+# # Example usage
+# import sys
+
+# def main():
+#     if len(sys.argv) != 4:
+#         print("Usage: python retrieval.py <COMPRESSED_DIR> <QUERY_FILE_PATH> <OUTPUT_DIR>")
+#         sys.exit(1)
+    
+#     compressed_dir = sys.argv[1]
+#     query_file_path = sys.argv[2]
+#     output_directory = sys.argv[3]
+
+#     # Path to the decompressed index inside the compressed folder
+#     inverted_index_path = os.path.join(compressed_dir, "decompressed_index.json")
+    
+#     # Optional: stopwords file (assume inside the same directory)
+#     stopwords_file = os.path.join(compressed_dir, "stopwords.txt")
+#     stopwords_path = stopwords_file if os.path.exists(stopwords_file) else None
+
+#     # Check if files exist
+#     if not os.path.exists(inverted_index_path):
+#         print(f"Error: Inverted index file not found: {inverted_index_path}")
+#         sys.exit(1)
+    
+#     if not os.path.exists(query_file_path):
+#         print(f"Error: Query file not found: {query_file_path}")
+#         sys.exit(1)
+    
+#     # Run Boolean retrieval
+#     try:
+#         boolean_retrieval(
+#             inverted_index_path=inverted_index_path,
+#             path_to_query_file=query_file_path,
+#             output_dir=output_directory,
+#             stopwords_path=stopwords_path
+#         )
+#         print("Boolean retrieval completed successfully!")
+#     except Exception as e:
+#         print(f"Error during retrieval: {e}")
+#         import traceback
+#         traceback.print_exc()
+
+# if __name__ == "__main__":
+#     main()
+
+
+import json
+import re
+import os
+from typing import List, Dict, Set, Union, Optional
+from collections import defaultdict
+import sys
+
+
+class BooleanQueryParser:
+    """Parser for Boolean queries with proper operator precedence and tree evaluation"""
+    
+    def __init__(self):
+        # Operator precedence: () > NOT > AND > OR
+        self.precedence = {'OR': 1, 'AND': 2, 'NOT': 3}
+        self.right_associative = {'NOT'}
+        
+    def tokenize_query(self, query: str) -> List[str]:
+        """Tokenize query while preserving Boolean operators and parentheses"""
+        # Replace parentheses with spaces around them for easier splitting
+        query = re.sub(r'([()])', r' \1 ', query)
+        
+        # Split by whitespace and filter empty strings
+        tokens = [token.strip() for token in query.split() if token.strip()]
+        
+        processed_tokens = []
+        for token in tokens:
+            if token.upper() in ['AND', 'OR', 'NOT']:
+                processed_tokens.append(token.upper())
+            elif token in ['(', ')']:
+                processed_tokens.append(token)
+            else:
+                processed_tokens.append(token.lower())
+                
+        return processed_tokens
+    
+    def preprocess_query(self, title: str, stopwords: Set[str]) -> List[str]:
+        """Apply same preprocessing as documents: lowercase, digit removal, stopword removal"""
+        # Tokenize while preserving operators
+        tokens = self.tokenize_query(title)
+        
+        processed = []
+        for token in tokens:
+            if token in ['AND', 'OR', 'NOT', '(', ')']:
+                processed.append(token)
+            else:
+                # Apply document preprocessing
+                token = token.lower()
+                # Remove digits
+                token = re.sub(r'\d+', '', token)
+                # Remove if it's a stopword or empty after processing
+                if token and token not in stopwords:
+                    processed.append(token)
+        
+        return processed
+    
+    def insert_implicit_ands(self, tokens: List[str]) -> List[str]:
+        """Insert implicit AND operators between adjacent terms"""
+        if not tokens:
+            return tokens
+            
+        result = []
+        operators = {'AND', 'OR', 'NOT'}
+        
+        for i in range(len(tokens)):
+            result.append(tokens[i])
+            
+            # Don't add AND after the last token
+            if i == len(tokens) - 1:
+                break
+                
+            current = tokens[i]
+            next_token = tokens[i + 1]
+            
+            # Insert AND if:
+            # 1. Current is term or ')' AND next is term or '(' or 'NOT'
+            # 2. Current is term or ')' AND next is term or 'NOT'
+            should_insert_and = False
+            
+            if current not in operators and current != '(' and current != ')':
+                # Current is a term
+                if (next_token not in operators and next_token != ')') or next_token == '(' or next_token == 'NOT':
+                    should_insert_and = True
+            elif current == ')':
+                # After closing parenthesis
+                if (next_token not in operators and next_token != ')') or next_token == '(' or next_token == 'NOT':
+                    should_insert_and = True
+                    
+            if should_insert_and:
+                result.append('AND')
+                
+        return result
+    
+    def infix_to_postfix(self, tokens: List[str]) -> List[str]:
+        """Convert infix Boolean expression to postfix using Shunting Yard algorithm"""
+        output = []
+        operator_stack = []
+        operators = {'AND', 'OR', 'NOT'}
+        
+        for token in tokens:
+            if token not in operators and token not in ['(', ')']:
+                # It's a term
+                output.append(token)
+            elif token in operators:
+                # It's an operator
+                while (operator_stack and 
+                       operator_stack[-1] != '(' and
+                       operator_stack[-1] in operators and
+                       (self.precedence[operator_stack[-1]] > self.precedence[token] or
+                        (self.precedence[operator_stack[-1]] == self.precedence[token] and 
+                         token not in self.right_associative))):
+                    output.append(operator_stack.pop())
+                operator_stack.append(token)
+            elif token == '(':
+                operator_stack.append(token)
+            elif token == ')':
+                while operator_stack and operator_stack[-1] != '(':
+                    output.append(operator_stack.pop())
+                if operator_stack and operator_stack[-1] == '(':
+                    operator_stack.pop()  # Remove the '('
+                    
+        # Pop remaining operators
+        while operator_stack:
+            output.append(operator_stack.pop())
+            
+        return output
+    
+    def evaluate_postfix(self, postfix: List[str], inverted_index: Dict) -> Set[str]:
+        """Evaluate postfix Boolean expression using inverted index"""
+        stack = []
+        
+        for token in postfix:
+            if token == 'AND':
+                if len(stack) >= 2:
+                    right = stack.pop()
+                    left = stack.pop()
+                    result = left.intersection(right)
+                    stack.append(result)
+                else:
+                    # Handle case where we don't have enough operands
+                    stack.append(set())
+            elif token == 'OR':
+                if len(stack) >= 2:
+                    right = stack.pop()
+                    left = stack.pop()
+                    result = left.union(right)
+                    stack.append(result)
+                else:
+                    # Handle case where we don't have enough operands
+                    stack.append(set())
+            elif token == 'NOT':
+                if len(stack) >= 1:
+                    operand = stack.pop()
+                    # For NOT, we need all documents except those in operand
+                    all_docs = set()
+                    for term_postings in inverted_index.values():
+                        all_docs.update(term_postings.keys())
+                    result = all_docs - operand
+                    stack.append(result)
+                else:
+                    # Handle case where we don't have operand for NOT
+                    stack.append(set())
+            else:
+                # It's a term
+                if token in inverted_index:
+                    # Get document IDs for this term
+                    doc_ids = set(inverted_index[token].keys())
+                    stack.append(doc_ids)
+                else:
+                    # Term not in index
+                    stack.append(set())
+        
+        return stack[0] if stack else set()
+    
+    def parse_and_evaluate(self, query: str, inverted_index: Dict, stopwords: Set[str]) -> Set[str]:
+        """Complete pipeline: preprocess -> add implicit ANDs -> convert to postfix -> evaluate"""
+        # Step 1: Preprocess query
+        tokens = self.preprocess_query(query, stopwords)
+        
+        if not tokens:
+            return set()
+        
+        # Step 2: Insert implicit ANDs
+        tokens_with_ands = self.insert_implicit_ands(tokens)
+        
+        # Step 3: Convert to postfix
+        postfix = self.infix_to_postfix(tokens_with_ands)
+        
+        # Step 4: Evaluate
+        result = self.evaluate_postfix(postfix, inverted_index)
+        
+        return result
+
+
+def load_inverted_index(index_path: str) -> Dict:
+    """Load the inverted index from JSON file"""
+    try:
+        with open(index_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                raise ValueError("Inverted index file is empty")
+            return json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"Error parsing inverted index JSON: {e}")
+        print("Make sure your inverted index file is in valid JSON format")
+        raise
+    except FileNotFoundError:
+        print(f"Inverted index file not found: {index_path}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error loading inverted index: {e}")
+        raise
+
+
+def load_stopwords(stopwords_path: str) -> Set[str]:
+    """Load stopwords from file"""
+    stopwords = set()
+    try:
+        with open(stopwords_path, 'r') as f:
+            for line in f:
+                stopwords.add(line.strip().lower())
+    except FileNotFoundError:
+        # Default English stopwords if file not found
+        stopwords = {
+            'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'by', 'for', 
+            'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 
+            'the', 'to', 'was', 'will', 'with', 'the', 'this', 'but', 'they', 
+            'have', 'had', 'what', 'said', 'each', 'which', 'she', 'do', 
+            'how', 'their', 'if', 'up', 'out', 'many', 'then', 'them', 'these', 
+            'so', 'some', 'her', 'would', 'make', 'like', 'into', 'him', 'time', 
+            'two', 'more', 'very', 'when', 'come', 'may', 'its', 'only', 'think', 
+            'now', 'work', 'life', 'only', 'can', 'still', 'should', 'after', 
+            'being', 'just', 'where', 'much', 'go', 'well', 'were', 'been', 
+            'through', 'when', 'there', 'could', 'people'
+        }
+    return stopwords
+
+
+def load_queries(path_to_query_file: str):
+    """Load queries from file, supporting multiple formats and encodings"""
+    queries = []
+    
+    # Try different encodings
+    encodings = ['utf-8', 'utf-16', 'utf-8-sig', 'latin-1', 'cp1252']
     
     for encoding in encodings:
         try:
-            with open(stopwords_file, "r", encoding=encoding) as f:
-                for line in f:
-                    w = line.strip().lower()
-                    if w:
-                        stopwords.add(w)
-            return stopwords
-        except UnicodeDecodeError:
-            continue
-        except Exception:
-            continue
-    
-    raise ValueError(f"Could not decode {stopwords_file} with any common encoding")
-
-def remove_non_ascii(s: str) -> str:
-    """Keep only ASCII characters."""
-    return ''.join(c for c in s if ord(c) < 128)
-
-def tokenize_query_text(text: str, stopwords: Set[str]) -> List[str]:
-    """Tokenize query text using Task 1 rules."""
-    # Remove digits (0-9)
-    text = ''.join(c for c in text if not c.isdigit())
-    
-    # Handle escape characters
-    text = text.replace('"', r'\"')
-    text = text.replace('\\', r'\\')
-    
-    # Split on whitespace
-    tokens = text.split()
-    
-    clean_tokens = []
-    for token in tokens:
-        # Lowercase
-        token = token.lower()
-        # Remove non-ASCII characters
-        token = remove_non_ascii(token)
-        # Keep token if it's not empty and not a stopword
-        if token and token not in stopwords:
-            clean_tokens.append(token)
-    
-    return clean_tokens
-
-def insert_implicit_ands(tokens: List[str]) -> List[str]:
-    """Insert implicit AND operators between consecutive non-operator tokens."""
-    if not tokens:
-        return tokens
-    
-    operators = {'AND', 'OR', 'NOT'}
-    result = []
-    
-    for i, token in enumerate(tokens):
-        result.append(token)
-        
-        if i == len(tokens) - 1:
-            continue
-            
-        current_token = token
-        next_token = tokens[i + 1]
-        
-        should_insert_and = True
-        
-        if current_token in {'AND', 'OR'}:
-            should_insert_and = False
-        elif next_token in {'AND', 'OR'}:
-            should_insert_and = False
-        elif current_token == '(':
-            should_insert_and = False
-        elif next_token == ')':
-            should_insert_and = False
-        elif current_token == 'NOT':
-            should_insert_and = False
-        
-        if should_insert_and:
-            result.append('AND')
-    
-    return result
-
-def preprocess_query_title(title: str, stopwords: Set[str]) -> List[str]:
-    """Preprocess a query title into tokenized form with implicit ANDs."""
-    # Protect operators and parentheses
-    title_protected = title
-    title_protected = re.sub(r'\bAND\b', ' __AND__ ', title_protected, flags=re.IGNORECASE)
-    title_protected = re.sub(r'\bOR\b', ' __OR__ ', title_protected, flags=re.IGNORECASE)
-    title_protected = re.sub(r'\bNOT\b', ' __NOT__ ', title_protected, flags=re.IGNORECASE)
-    title_protected = title_protected.replace('(', ' __LPAREN__ ')
-    title_protected = title_protected.replace(')', ' __RPAREN__ ')
-    
-    # Tokenize
-    tokens = tokenize_query_text(title_protected, stopwords)
-    
-    # Restore operators and parentheses
-    restored_tokens = []
-    for token in tokens:
-        if token == '__and__':
-            restored_tokens.append('AND')
-        elif token == '__or__':
-            restored_tokens.append('OR')
-        elif token == '__not__':
-            restored_tokens.append('NOT')
-        elif token == '__lparen__':
-            restored_tokens.append('(')
-        elif token == '__rparen__':
-            restored_tokens.append(')')
-        else:
-            restored_tokens.append(token)
-    
-    # Insert implicit ANDs
-    tokens_with_ands = insert_implicit_ands(restored_tokens)
-    
-    return tokens_with_ands
-
-class BooleanRetrieval:
-    """Boolean retrieval system using inverted index and query evaluation."""
-    
-    def __init__(self, inverted_index: Dict[str, Dict[str, List[int]]], stopwords_file: str = None):
-        """
-        Initialize Boolean retrieval system.
-        
-        Args:
-            inverted_index: Dictionary mapping terms to {doc_id: [positions]}
-            stopwords_file: Path to stopwords file (optional)
-        """
-        self.inverted_index = inverted_index
-        self.parser = BooleanQueryParser()
-        self.stopwords = set()
-        
-        if stopwords_file and os.path.exists(stopwords_file):
-            self.stopwords = load_stopwords(stopwords_file)
-    
-    def get_documents_for_term(self, term: str) -> Set[str]:
-        """Get all document IDs containing a specific term."""
-        if term in self.inverted_index:
-            return set(self.inverted_index[term].keys())
-        return set()
-    
-    def evaluate_ast_boolean(self, node: ASTNode) -> Set[str]:
-        """
-        Recursively evaluate AST to get matching document IDs.
-        
-        Args:
-            node: AST node to evaluate
-            
-        Returns:
-            Set of document IDs that match the query
-        """
-        if node.is_term():
-            # Return documents containing this term
-            return self.get_documents_for_term(node.value)
-        
-        elif node.value == 'NOT':
-            # Get all documents, then subtract those matching the right operand
-            right_docs = self.evaluate_ast_boolean(node.right)
-            
-            # Get all document IDs from the index
-            all_docs = set()
-            for term_postings in self.inverted_index.values():
-                all_docs.update(term_postings.keys())
-            
-            return all_docs - right_docs
-        
-        elif node.value == 'AND':
-            # Intersection of left and right results
-            left_docs = self.evaluate_ast_boolean(node.left)
-            right_docs = self.evaluate_ast_boolean(node.right)
-            return left_docs & right_docs
-        
-        elif node.value == 'OR':
-            # Union of left and right results
-            left_docs = self.evaluate_ast_boolean(node.left)
-            right_docs = self.evaluate_ast_boolean(node.right)
-            return left_docs | right_docs
-        
-        else:
-            raise ValueError(f"Unknown operator: {node.value}")
-    
-    def execute_query(self, query_title: str) -> Set[str]:
-        """
-        Execute a single Boolean query and return matching document IDs.
-        
-        Args:
-            query_title: Raw query title string
-            
-        Returns:
-            Set of matching document IDs
-        """
-        try:
-            # Step 1: Tokenize using Task 1 rules
-            tokens = preprocess_query_title(query_title, self.stopwords)
-            
-            if not tokens:
-                return set()
-            
-            # Step 2: Parse query (implicit ANDs already inserted)
-            parsed_result = self.parser.parse_query(tokens)
-            ast = parsed_result['ast']
-            
-            # Step 3: Evaluate AST using postings lists
-            matching_docs = self.evaluate_ast_boolean(ast)
-            
-            return matching_docs
-            
+            with open(path_to_query_file, 'r', encoding=encoding) as f:
+                content = f.read().strip()
+                if not content:
+                    continue
+                
+                # Try JSON array format first
+                try:
+                    queries = json.loads(content)
+                    if isinstance(queries, list):
+                        # Validate structure
+                        valid_queries = []
+                        for i, query in enumerate(queries):
+                            if isinstance(query, dict):
+                                # Handle different field names
+                                qid = query.get('qid') or query.get('query_id') or query.get('id') or str(i+1)
+                                title = query.get('title') or query.get('query') or ""
+                                if title:
+                                    valid_queries.append({'qid': str(qid), 'title': str(title)})
+                        
+                        if valid_queries:
+                            print(f"Loaded {len(valid_queries)} queries from JSON array format (encoding: {encoding})")
+                            return valid_queries
+                
+                except json.JSONDecodeError:
+                    pass
+                
+                # Try JSONL format (one JSON object per line)
+                try:
+                    queries = []
+                    lines = content.split('\n')
+                    for line_num, line in enumerate(lines, 1):
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        
+                        try:
+                            query_obj = json.loads(line)
+                            if isinstance(query_obj, dict):
+                                # Handle different field names
+                                qid = query_obj.get('qid') or query_obj.get('query_id') or query_obj.get('id') or str(line_num)
+                                title = query_obj.get('title') or query_obj.get('query') or ""
+                                if title:
+                                    queries.append({'qid': str(qid), 'title': str(title)})
+                        except json.JSONDecodeError:
+                            continue
+                    
+                    if queries:
+                        print(f"Loaded {len(queries)} queries from JSONL format (encoding: {encoding})")
+                        return queries
+                
+                except Exception:
+                    pass
+                
+                # Try tab-separated text format
+                try:
+                    queries = []
+                    lines = content.split('\n')
+                    for line_num, line in enumerate(lines, 1):
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        
+                        if '\t' in line:
+                            parts = line.split('\t', 1)
+                            if len(parts) >= 2:
+                                qid, title = parts[0], parts[1]
+                                queries.append({'qid': qid.strip(), 'title': title.strip()})
+                        else:
+                            # Single line = title, auto-generate ID
+                            queries.append({'qid': str(line_num), 'title': line})
+                    
+                    if queries:
+                        print(f"Loaded {len(queries)} queries from text format (encoding: {encoding})")
+                        return queries
+                
+                except Exception:
+                    pass
+                    
         except Exception as e:
-            print(f"Error executing query '{query_title}': {e}")
-            return set()
+            continue
     
-    def process_queries(self, query_file_path: str, output_dir: str):
-        """
-        Process all queries from file and generate TREC format output.
-        
-        Args:
-            query_file_path: Path to query JSON file
-            output_dir: Directory to save docids.txt
-        """
-        # Load queries
-        encodings = ['utf-8', 'utf-8-sig', 'utf-16', 'latin-1', 'cp1252']
-        content = None
-        
-        for encoding in encodings:
-            try:
-                with open(query_file_path, 'r', encoding=encoding) as f:
-                    content = f.read().strip()
-                break
-            except UnicodeDecodeError:
-                continue
-        
-        if content is None:
-            raise ValueError(f"Could not decode {query_file_path}")
-        
-        # Parse JSON
-        try:
-            if content.startswith('['):
-                queries = json.loads(content)
-            else:
-                queries = []
-                for line in content.splitlines():
-                    line = line.strip()
-                    if line:
-                        queries.append(json.loads(line))
-        except json.JSONDecodeError as e:
-            raise ValueError(f"JSON parsing error: {e}")
-        
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-        output_file = os.path.join(output_dir, 'docids.txt')
-        
-        results = []
-        
-        # Process each query
-        for query in queries:
-            query_id = query.get('query_id', '')
-            title = query.get('title', '')
-            
-            if not query_id or not title:
-                continue
-            
-            print(f"Processing query {query_id}: {title}")
-            
-            # Execute query
-            matching_docs = self.execute_query(title)
-            
-            # Sort document IDs lexicographically for ranking
-            sorted_docs = sorted(matching_docs)
-            
-            # Generate TREC format lines
-            for rank, doc_id in enumerate(sorted_docs, 1):
-                results.append({
-                    'qid': query_id,
-                    'docid': doc_id,
-                    'rank': rank,
-                    'score': 1  # Constant score for Boolean retrieval
-                })
-            
-            print(f"  Found {len(matching_docs)} matching documents")
-        
-        # Write results to file
-        with open(output_file, 'w', encoding='utf-8') as f:
-            for result in results:
-                f.write(f"{result['qid']} {result['docid']} {result['rank']} {result['score']}\n")
-        
-        print(f"\nResults written to: {output_file}")
-        print(f"Total result lines: {len(results)}")
+    # If all attempts fail
+    raise ValueError(f"Could not parse query file {path_to_query_file}. Tried encodings: {encodings}. Supported formats: JSON array, JSONL, tab-separated text")
 
-def boolean_retrieval(inverted_index: object, path_to_query_file: str, output_dir: str) -> None:
+
+def boolean_retrieval(inverted_index_path: str, path_to_query_file: str, output_dir: str, 
+                     stopwords_path: str = None) -> None:
     """
-    Main Boolean retrieval function as specified in the assignment.
+    Main function for Boolean retrieval
     
     Args:
-        inverted_index: Inverted index object (dictionary)
-        path_to_query_file: Path to query JSON file
-        output_dir: Output directory for docids.txt
+        inverted_index_path: Path to the inverted index JSON file
+        path_to_query_file: Path to query file (JSON, XML, or text format)
+        output_dir: Directory to save output file
+        stopwords_path: Path to stopwords file (optional)
     """
-    # Create retrieval system
-    retrieval_system = BooleanRetrieval(inverted_index)
     
-    # Process queries and generate output
-    retrieval_system.process_queries(path_to_query_file, output_dir)
+    # Load inverted index
+    print("Loading inverted index...")
+    try:
+        inverted_index = load_inverted_index(inverted_index_path)
+        print(f"Loaded inverted index with {len(inverted_index)} terms")
+    except Exception as e:
+        print(f"Error loading inverted index: {e}")
+        return
+    
+    # Load stopwords
+    stopwords = load_stopwords(stopwords_path) if stopwords_path else set()
+    
+    # Load queries
+    print("Loading queries...")
+    try:
+        queries = load_queries(path_to_query_file)
+    except Exception as e:
+        print(f"Error loading queries: {e}")
+        return
+    
+    # Initialize parser
+    parser = BooleanQueryParser()
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Process queries and write results
+    output_file = os.path.join(output_dir, 'docids.txt')
+    
+    print(f"Processing {len(queries)} queries...")
+    with open(output_file, 'w') as f:
+        for query in queries:
+            qid = query['qid']
+            title = query['title']
+            
+            print(f"Processing query {qid}: {title}")
+            
+            # Parse and evaluate query
+            matching_docs = parser.parse_and_evaluate(title, inverted_index, stopwords)
+            
+            # Sort documents lexicographically for consistent ranking
+            sorted_docs = sorted(list(matching_docs))
+            
+            # Write results in TREC format
+            for rank, doc_id in enumerate(sorted_docs, 1):
+                # Format: qid docid rank score
+                f.write(f"{qid} {doc_id} {rank} 1\n")
+    
+    print(f"Results written to {output_file}")
 
-def load_inverted_index(index_file_path: str) -> Dict[str, Dict[str, List[int]]]:
-    """Load inverted index from JSON file."""
-    encodings = ['utf-8', 'utf-8-sig', 'utf-16', 'latin-1', 'cp1252']
-    
-    for encoding in encodings:
-        try:
-            with open(index_file_path, 'r', encoding=encoding) as f:
-                return json.load(f)
-        except UnicodeDecodeError:
-            continue
-        except Exception as e:
-            print(f"Error with {encoding}: {e}")
-            continue
-    
-    raise ValueError(f"Could not load index from {index_file_path}")
+
+
+
+import sys
 
 if __name__ == "__main__":
-    import sys
-    
     if len(sys.argv) != 4:
-        print("Usage: python boolean_retrieval.py <index_file> <query_file> <output_dir>")
-        print("\nExample:")
-        print('python boolean_retrieval.py "index.json" "queries.json" "output"')
-        sys.exit(1)
-    
-    index_file = sys.argv[1]
-    query_file = sys.argv[2]
+        print("Usage: python3 retrieval.py <INVERTED_INDEX_PATH> <QUERY_FILE_PATH> <OUTPUT_DIR>")
+        exit(1)
+
+    inverted_index_path = sys.argv[1]
+    query_file_path = sys.argv[2]
     output_directory = sys.argv[3]
-    
+
+    # Optional: stopwords file
+    stopwords_file = "stopwords.txt"  # Change if you want dynamic path
+    stopwords_file_path = stopwords_file if os.path.exists(stopwords_file) else None
+
+    # Check if files exist
+    if not os.path.exists(inverted_index_path):
+        print(f"Error: Inverted index file not found: {inverted_index_path}")
+        exit(1)
+    if not os.path.exists(query_file_path):
+        print(f"Error: Query file not found: {query_file_path}")
+        exit(1)
+
+    # Run Boolean retrieval
     try:
-        # Load inverted index
-        print(f"Loading inverted index from: {index_file}")
-        index = load_inverted_index(index_file)
-        print(f"Loaded index with {len(index)} terms")
-        
-        # Execute Boolean retrieval
-        print(f"\nProcessing queries from: {query_file}")
-        boolean_retrieval(index, query_file, output_directory)
-        
+        boolean_retrieval(
+            inverted_index_path=inverted_index_path,
+            path_to_query_file=query_file_path, 
+            output_dir=output_directory,
+            stopwords_path=stopwords_file_path
+        )
+        print("Boolean retrieval completed successfully!")
     except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+        print(f"Error during retrieval: {e}")
+        import traceback
+        traceback.print_exc()
